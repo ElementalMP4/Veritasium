@@ -196,21 +196,27 @@ void handle_setup_route(AsyncWebServerRequest *request)
    request->send(SPIFFS, "/setup.html", "text/html");
 }
 
+void handle_index_route(AsyncWebServerRequest *request)
+{
+   request->send(SPIFFS, "/index.html", "text/html");
+}
+
 void handle_status_route(AsyncWebServerRequest *request)
 {
-   int sw_state = digitalRead(sw_sense);
-   int bell_state = digitalRead(bell_sense);
-   int strobe_state = digitalRead(strobe_sense);
-   String output = "";
-   output.concat("SW:");
-   output.concat(sw_state);
-   output.concat("\n");
-   output.concat("Bell:");
-   output.concat(bell_state);
-   output.concat("\n");
-   output.concat("Strobe:");
-   output.concat(strobe_state);
-   request->send(200, "text/html", output);
+   bool sw_state = !digitalRead(sw_sense);
+   bool bell_state = digitalRead(bell_sense);
+   bool strobe_state = digitalRead(strobe_sense);
+   bool setup_mode = setup_mode_enabled();
+
+   String output;
+   JsonDocument doc;
+   doc["set"] = sw_state;
+   doc["bell"] = bell_state;
+   doc["strobe"] = strobe_state;
+   doc["setup"] = setup_mode;
+   serializeJson(doc, output);
+
+   request->send(200, "application/json", output);
 }
 
 void handle_code_update_route(AsyncWebServerRequest *request)
@@ -363,7 +369,7 @@ void send_state_update(const char *changed, bool state)
 {
    Serial.printf("%s state changed to %d\n", changed, state);
    JsonDocument doc;
-   doc["set"] = state;
+   doc["state"] = state;
 
    if (strcmp(changed, "Bell") == 0)
    {
@@ -419,7 +425,8 @@ void business_as_usual(String ssid, String password)
    Serial.println(WiFi.localIP());
    print_lcd("Veritasium", WiFi.localIP().toString());
 
-   server.on("/", HTTP_GET, handle_setup_route);
+   server.on("/", HTTP_GET, handle_index_route);
+   server.on("/setup", HTTP_GET, handle_setup_route);
    server.on("/update-wifi", HTTP_POST, handle_wifi_details_change_route);
    server.on("/status", HTTP_GET, handle_status_route);
    server.on("/press", HTTP_POST, handle_keypress_route);
@@ -494,7 +501,7 @@ void loop()
    if (bell_state_changed)
    {
       bell_state_changed = false;
-      bool state = !digitalRead(bell_sense);
+      bool state = digitalRead(bell_sense);
 
       if (state != bell_previous_state)
       {
@@ -505,7 +512,7 @@ void loop()
    if (strobe_state_changed)
    {
       strobe_state_changed = false;
-      bool state = !digitalRead(strobe_sense);
+      bool state = digitalRead(strobe_sense);
 
       if (state != strobe_previous_state)
       {

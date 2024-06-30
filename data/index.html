@@ -1,0 +1,336 @@
+<!doctype html>
+<html>
+
+<head>
+    <title>Veritasium</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+</head>
+
+<style>
+    body::-webkit-scrollbar {
+        display: none;
+    }
+
+    body {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .grid-container {
+        display: grid;
+        grid-template-columns: auto auto;
+    }
+
+    h3 {
+        float: left;
+        padding-right: 30px;
+    }
+</style>
+
+<body>
+    <div class="w3-container w3-red">
+        <div class="grid-container">
+            <h1 class="w3-text-white">Veritasium</h1>
+        </div>
+    </div>
+
+    <div class="w3-container w3-panel">
+        <div style="height: 100%; width: 100%;" id="terminal"></div>
+    </div>
+
+    <div class="w3-container w3-panel">
+        <div class="w3-card-4">
+            <header class="w3-container w3-orange">
+                <div class="grid-container">
+                    <div align="left">
+                        <p>
+                        <h3 class="w3-text-white">Status</h3>
+                        </p>
+                    </div>
+                    <div align="right">
+                        <p><button class="w3-button w3-red" onclick="toggleMenu('status')"
+                                id="status-toggle">&#x25B2;</button></p>
+                    </div>
+                </div>
+            </header>
+            <div class="w3-container" id="status" style="display: block;">
+                <div class="w3-panel">
+                    <div class="w3-panel">
+                        <h3 id="set-status">Set: &#9899;</h3>
+                        <h3 id="bell-status">Bell: &#9899;</h3>
+                        <h3 id="strobe-status">Strobe: &#9899;</h3>
+                        <h3 id="setup-status">Setup: &#9899;</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="w3-container w3-panel">
+        <div class="w3-card-4">
+            <header class="w3-container w3-orange">
+                <div class="grid-container">
+                    <div align="left">
+                        <p>
+                        <h3 class="w3-text-white">User Controls</h3>
+                        </p>
+                    </div>
+                    <div align="right">
+                        <p><button class="w3-button w3-red" onclick="toggleMenu('controls')"
+                                id="controls-toggle">&#x25B2;</button></p>
+                    </div>
+                </div>
+            </header>
+            <div class="w3-container" id="controls" style="display: block;">
+                <div class="w3-panel">
+                    <div class="w3-panel">
+                        <button class="w3-button w3-green" onclick="fullSet()">Full Set</button>
+                        <button class="w3-button w3-blue" onclick="partSet()">Part Set</button>
+                        <button class="w3-button w3-red" onclick="unset()">Unset</button>
+                        <button class="w3-button w3-red" onclick="silence()">Silence</button>
+                        <button class="w3-button w3-grey" onclick="refresh()">Refresh Status</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="w3-container w3-panel">
+        <div class="w3-card-4">
+            <header class="w3-container w3-orange">
+                <div class="grid-container">
+                    <div align="left">
+                        <p>
+                        <h3 class="w3-text-white">Engineer Controls</h3>
+                        </p>
+                    </div>
+                    <div align="right">
+                        <p><button class="w3-button w3-red" onclick="toggleMenu('engineer-controls')"
+                                id="engineer-controls-toggle">&#x25B2;</button></p>
+                    </div>
+                </div>
+            </header>
+            <div class="w3-container" id="engineer-controls" style="display: block;">
+                <div class="w3-panel">
+                    <div class="w3-panel">
+                        <button class="w3-button w3-green" onclick="engineeringMode()">Engineering Mode</button>
+                        <button class="w3-button w3-red" onclick="reset()">Reset/Exit</button>
+                        <a href="/setup" target="_blank">
+                            <button class="w3-button w3-grey">Setup</button>
+                        </a>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+<div id="message-modal" class="w3-modal">
+    <div class="w3-modal-content">
+        <header class="w3-container w3-red">
+            <h3 class="w3-text-white" id="message-modal-title">
+            </h3>
+        </header>
+        <div class="w3-container">
+            <span onclick="document.getElementById('message-modal').style.display='none'"
+                class="w3-button w3-display-topright w3-orange w3-text-white">&times;</span>
+            <div class="w3-panel">
+                <p id="message-modal-content"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const messageModal = document.getElementById("message-modal");
+    const messageModalTitle = document.getElementById("message-modal-title");
+    const messageModalContent = document.getElementById("message-modal-content");
+
+    const upChevron = "&#x25B2;";
+    const downChevron = "&#x25BC;";
+
+    const red = "&#128683;";
+    const green = "&#x2705;";
+
+    var statusCache = {
+        bell: false,
+        setup: false,
+        strobe: false,
+        set: false
+    }
+
+    Object.defineProperty(String.prototype, 'capitalise', {
+        value: function () {
+            return this.charAt(0).toUpperCase() + this.slice(1);
+        },
+        enumerable: false
+    });
+
+    function showMessage(title, message) {
+        messageModalTitle.textContent = title;
+        messageModalContent.textContent = message;
+        messageModal.style.display = "block";
+    }
+
+    function toggleMenu(menu) {
+        let menuDiv = document.getElementById(menu);
+        let toggle = document.getElementById(menu + "-toggle");
+
+        if (menuDiv.style.display == "none") {
+            menuDiv.style.display = "block";
+            toggle.innerHTML = upChevron;
+        } else {
+            menuDiv.style.display = "none";
+            toggle.innerHTML = downChevron;
+        }
+    }
+
+    function doHttpPost(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState == 4) {
+                callback(xhr.status, xhr.responseText);
+            }
+        }
+        xhr.open("POST", url, true);
+        xhr.send();
+    }
+
+    function doHttpGet(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState == 4) {
+                callback(xhr.status, xhr.responseText);
+            }
+        }
+        xhr.open("GET", url, true);
+        xhr.send();
+    }
+
+    function reset() {
+        doHttpPost("/press?sequence=user,reset", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to press RESET, status " + code);
+            }
+        });
+    }
+
+    function engineeringMode() {
+        if (statusCache.set) {
+            showMessage("Error", "Engineering mode cannot be entered if system is armed");
+            return;
+        }
+        doHttpPost("/press?sequence=eng,prog", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to enter engineering mode, status " + code);
+            } else {
+                showMessage("Success", "System should now be in engineering mode - ensure all zone lights are red");
+            }
+        });
+    }
+
+    function silence() {
+        doHttpPost("/press?sequence=user,reset", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to silence system, status " + code);
+            } else {
+                showMessage("Success", "System has been silenced");
+            }
+        });
+    }
+
+    function unset() {
+        if (!statusCache.set) {
+            showMessage("Error", "System is not armed");
+            return;
+        }
+        doHttpPost("/press?sequence=user", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to disarm system, status " + code);
+            } else {
+                showMessage("Success", "System has been disarmed");
+            }
+        });
+    }
+
+    function partSet() {
+        if (statusCache.set) {
+            showMessage("Error", "System is already armed");
+            return;
+        }
+        doHttpPost("/press?sequence=user,part", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to arm system, status " + code);
+            } else {
+                showMessage("Success", "System has been part set");
+            }
+        });
+    }
+
+    function fullSet() {
+        if (statusCache.set) {
+            showMessage("Error", "System is already armed");
+            return;
+        }
+        doHttpPost("/press?sequence=user,full", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to arm system, status " + code);
+            } else {
+                showMessage("Success", "System has been full set");
+            }
+        });
+    }
+
+    function updateState(element, state) {
+        let statusElement = document.getElementById(element + "-status");
+        statusElement.innerHTML = element.capitalise() + ": " + (state ? green : red);
+        statusCache[element] = state;
+    }
+
+    function refresh() {
+        doHttpGet("/status", (code, response) => {
+            if (code !== 200) {
+                showMessage("Error", "Failed to refresh status from server, status " + code);
+                return;
+            }
+            for (const [key, value] of Object.entries(JSON.parse(response))) {
+                updateState(key, value);
+            }
+        });
+    }
+
+    const websocket = new WebSocket("/events");
+
+    websocket.onopen = function () {
+        console.log("Connected to Websocket");
+    }
+
+    websocket.onclose = function () {
+        console.log("Connection lost");
+        showMessage("Connection Lost", "Connection to the server has been lost, refresh the page to obtain a new connection");
+    }
+
+    websocket.onmessage = function (raw) {
+        const msg = JSON.parse(raw.data);
+        console.log(msg);
+
+        switch (msg.type) {
+            case "BELL_STATE_CHANGE":
+                updateState("bell", msg.data.state);
+                break;
+            case "STROBE_STATE_CHANGE":
+                updateState("strobe", msg.data.state);
+                break;
+            case "SET_STATE_CHANGE":
+                updateState("set", msg.data.state);
+                break;
+        }
+    }
+
+    refresh();
+</script>
+
+</html>
