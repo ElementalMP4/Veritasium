@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Veritasium setup</title>
+</head>
+
+<body>
+    <h1>Set your key codes</h1>
+    <h2>1) Enter your engineer and user codes, then press submit.</h2>
+    <input type="text" id="engineer-input" placeholder="Engineering Code">
+    <input type="text" id="user-input" placeholder="User Code">
+    <button onclick="submitCodes()">Submit</button>
+    <br>
+    <h1>Connect to your WiFi network</h1>
+    <h2>2) Enter your WiFi details and press submit. The system should reboot.</h2>
+    <input type="text" id="ssid-input" placeholder="SSID">
+    <input type="text" id="password-input" placeholder="Password">
+    <button onclick="submitWifi()">Submit</button>
+</body>
+<script>
+    function doHttpPost(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState == 4) {
+                callback(xhr.status, xhr.responseText);
+            }
+        }
+        xhr.open("POST", url, true);
+        xhr.send();
+    }
+
+    function submitWifi() {
+        let ssid = document.getElementById("ssid-input").value;
+        let password = document.getElementById("password-input").value;
+        doHttpPost(`/update-wifi?ssid=${encodeURIComponent(ssid)}&password=${encodeURIComponent(password)}`, (code, response) => {
+            if (code !== 200) window.alert(`Error ${code} ${response}`);
+            else window.alert("Success! " + response);
+        });
+    }
+
+    function submitCodes() {
+        let user = document.getElementById("user-input").value;
+        let engineer = document.getElementById("engineer-input").value;
+        doHttpPost(`/update-code?type=engineer&code=${engineer}`, (code, response) => {
+            if (code !== 200) window.alert(`Error ${code} ${response}`);
+            else window.alert("Success! " + response);
+        });
+        doHttpPost(`/update-code?type=user&code=${user}`, (code, response) => {
+            if (code !== 200) window.alert(`Error ${code} ${response}`);
+            else window.alert("Success! " + response);
+        });
+    }
+</script>
+
+</html>
