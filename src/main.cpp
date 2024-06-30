@@ -5,6 +5,9 @@
 #include <LiquidCrystal_I2C.h>
 #include <Preferences.h>
 #include <SPIFFS.h>
+#include <ArduinoJson.h>
+
+AsyncWebSocket ws("/events");
 
 const char *key_map[4][4] = {
     {"reset", "0", "chime", "omit"},
@@ -22,6 +25,15 @@ int strobe_sense = 32;
 int collectors[] = {13, 12, 14, 27};
 int emitters[] = {26, 2, 18, 23};
 
+volatile bool sw_state_changed = false;
+volatile bool sw_previous_state = false;
+
+volatile bool bell_state_changed = false;
+volatile bool bell_previous_state = false;
+
+volatile bool strobe_state_changed = false;
+volatile bool strobe_previous_state = false;
+
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 IPAddress local_ip(192, 168, 1, 1);
@@ -32,7 +44,7 @@ Preferences preferences;
 
 AsyncWebServer server(80);
 
-boolean setup_mode_enabled()
+bool setup_mode_enabled()
 {
    return digitalRead(setup_button) == LOW;
 }
@@ -87,66 +99,66 @@ void handle_keypress_route(AsyncWebServerRequest *request)
 
    xTaskCreate([](void *param)
                {
-                String seq = *static_cast<String *>(param);
-                delete static_cast<String *>(param);
+                    String seq = *static_cast<String *>(param);
+                    delete static_cast<String *>(param);
 
-                char seq_cstr[seq.length() + 1];
-                seq.toCharArray(seq_cstr, seq.length() + 1);
+                    char seq_cstr[seq.length() + 1];
+                    seq.toCharArray(seq_cstr, seq.length() + 1);
 
-                char *token = strtok(seq_cstr, ",");
-                while (token != NULL)
-                {
-                  if (strcmp(token, "eng") == 0)
-                  {
-                     char *code = get_code("code_eng");
-                     if (code != NULL)
-                     {
-                        char container[2] = {'\0', '\0'};
-                        int index = 0;
-                        while (code[index] != '\0')
+                    char *token = strtok(seq_cstr, ",");
+                    while (token != NULL)
+                    {
+                        if (strcmp(token, "eng") == 0)
                         {
-                           container[0] = code[index];
-                           press_key(container);
-                           vTaskDelay(keypress_delay / portTICK_PERIOD_MS);
-                           index++;
+                            char *code = get_code("code_eng");
+                            if (code != NULL)
+                            {
+                                char container[2] = {'\0', '\0'};
+                                int index = 0;
+                                while (code[index] != '\0')
+                                {
+                                    container[0] = code[index];
+                                    press_key(container);
+                                    vTaskDelay(keypress_delay / portTICK_PERIOD_MS);
+                                    index++;
+                                }
+                                free(code);
+                            }
+                            else
+                            {
+                                Serial.println("Engineering code has not been set!");
+                            }
                         }
-                        free(code);
-                     }
-                     else
-                     {
-                        Serial.println("Engineering code has not been set!");
-                     }
-                  }
-                  else if (strcmp(token, "user") == 0)
-                  {
-                     char *code = get_code("code_user");
-                     if (code != NULL)
-                     {
-                        char container[2] = {'\0', '\0'};
-                        int index = 0;
-                        while (code[index] != '\0')
+                        else if (strcmp(token, "user") == 0)
                         {
-                           container[0] = code[index];
-                           press_key(container);
-                           vTaskDelay(keypress_delay / portTICK_PERIOD_MS);
-                           index++;
+                            char *code = get_code("code_user");
+                            if (code != NULL)
+                            {
+                                char container[2] = {'\0', '\0'};
+                                int index = 0;
+                                while (code[index] != '\0')
+                                {
+                                    container[0] = code[index];
+                                    press_key(container);
+                                    vTaskDelay(keypress_delay / portTICK_PERIOD_MS);
+                                    index++;
+                                }
+                                free(code);
+                            }
+                            else
+                            {
+                                Serial.println("User code has not been set!");
+                            }
                         }
-                        free(code);
-                     }
-                     else
-                     {
-                        Serial.println("User code has not been set!");
-                     }
-                  }
-                  else
-                  {
-                     press_key(token);
-                     vTaskDelay(keypress_delay / portTICK_PERIOD_MS);
-                  }
-                  token = strtok(NULL, ",");
-                }
+                        else
+                        {
+                            press_key(token);
+                            vTaskDelay(keypress_delay / portTICK_PERIOD_MS);
+                        }
+                        token = strtok(NULL, ",");
+                    }
 
-                vTaskDelete(NULL); },
+                    vTaskDelete(NULL); },
                "KeyPressTask", 4096, new String(sequence), 1, NULL);
 
    request->send(200, "text/html", "OK");
@@ -285,6 +297,7 @@ void setup_mode()
    server.on("/", HTTP_GET, handle_setup_route);
    server.on("/update-wifi", HTTP_POST, handle_wifi_details_change_route);
    server.on("/update-code", HTTP_POST, handle_code_update_route);
+
    server.begin();
 }
 
@@ -296,6 +309,89 @@ char *string_to_char(String input)
    for (int i = 0; i < input.length(); i++)
       output[i] = input.charAt(i);
    return output;
+}
+
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
+{
+   if (type == WS_EVT_CONNECT)
+   {
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+   }
+   else if (type == WS_EVT_DISCONNECT)
+   {
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+   }
+   else if (type == WS_EVT_DATA)
+   {
+      AwsFrameInfo *info = (AwsFrameInfo *)arg;
+      if (info->final && info->index == 0 && info->len == len)
+      {
+         if (info->opcode == WS_TEXT)
+         {
+            data[len] = 0;
+            Serial.printf("WebSocket received text: %s\n", (char *)data);
+            client->text((char *)data);
+         }
+         else
+         {
+            char message[len];
+            memcpy(message, data, len);
+            Serial.printf("WebSocket received binary message: ");
+            for (size_t i = 0; i < len; i++)
+            {
+               Serial.printf("%02x ", message[i]);
+            }
+            Serial.printf("\n");
+         }
+      }
+   }
+}
+
+void broadcast_to_ws(const char *type, JsonDocument data)
+{
+   JsonDocument doc;
+   doc["type"] = type;
+   doc["data"] = data;
+
+   String jsonString;
+   serializeJson(doc, jsonString);
+
+   ws.textAll(jsonString);
+}
+
+void send_state_update(const char *changed, bool state)
+{
+   Serial.printf("%s state changed to %d\n", changed, state);
+   JsonDocument doc;
+   doc["set"] = state;
+
+   if (strcmp(changed, "Bell") == 0)
+   {
+      broadcast_to_ws("BELL_STATE_CHANGE", doc);
+   }
+   else if (strcmp(changed, "Strobe") == 0)
+   {
+      broadcast_to_ws("STROBE_STATE_CHANGE", doc);
+   }
+   else if (strcmp(changed, "Set") == 0)
+   {
+      broadcast_to_ws("SET_STATE_CHANGE", doc);
+   }
+}
+
+void IRAM_ATTR handle_state_update()
+{
+   sw_state_changed = true;
+}
+
+void IRAM_ATTR handle_bell_update()
+{
+   bell_state_changed = true;
+}
+
+void IRAM_ATTR handle_strobe_update()
+{
+   strobe_state_changed = true;
 }
 
 void business_as_usual(String ssid, String password)
@@ -329,7 +425,18 @@ void business_as_usual(String ssid, String password)
    server.on("/press", HTTP_POST, handle_keypress_route);
    server.on("/update-code", HTTP_POST, handle_code_update_route);
 
+   server.addHandler(&ws);
+   ws.onEvent(onWsEvent);
+
    server.begin();
+
+   sw_previous_state = !digitalRead(sw_sense);
+   attachInterrupt(digitalPinToInterrupt(sw_sense), handle_state_update, CHANGE);
+   bell_previous_state = digitalRead(bell_sense);
+   attachInterrupt(digitalPinToInterrupt(bell_sense), handle_bell_update, CHANGE);
+   strobe_previous_state = digitalRead(strobe_sense);
+   attachInterrupt(digitalPinToInterrupt(strobe_sense), handle_strobe_update, CHANGE);
+
    delay(3000);
 }
 
@@ -373,5 +480,37 @@ void setup()
 
 void loop()
 {
-   // Nada
+   if (sw_state_changed)
+   {
+      sw_state_changed = false;
+      bool state = !digitalRead(sw_sense);
+
+      if (state != sw_previous_state)
+      {
+         sw_previous_state = state;
+         send_state_update("Set", state);
+      }
+   }
+   if (bell_state_changed)
+   {
+      bell_state_changed = false;
+      bool state = !digitalRead(bell_sense);
+
+      if (state != bell_previous_state)
+      {
+         bell_previous_state = state;
+         send_state_update("Bell", state);
+      }
+   }
+   if (strobe_state_changed)
+   {
+      strobe_state_changed = false;
+      bool state = !digitalRead(strobe_sense);
+
+      if (state != strobe_previous_state)
+      {
+         strobe_previous_state = state;
+         send_state_update("Strobe", state);
+      }
+   }
 }
